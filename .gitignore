@@ -1,6 +1,8 @@
 # History files
 .Rhistory
 .Rapp.history
+/data-master
+/intensive-course-main
 
 # Session Data files
 .RData
