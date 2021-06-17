@@ -60,3 +60,5 @@ ggplot(data_long, aes(time, value, color = variable))+geom_point(aes(color = var
 
 ## sick: 6575
 ## dead: 134
+
+#the ratio of infected to killed stays the same. cant figure out where it goes wrong.
