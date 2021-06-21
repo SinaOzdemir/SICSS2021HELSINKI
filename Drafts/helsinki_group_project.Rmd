@@ -1,0 +1,34 @@
+---
+title: "A data-driven typology of elected representative"
+description: |
+  The key element in any type of democracy is representation. Consequently, representatives, specifically the elected representatives, occupy the central role in day-to-day functioning of any democracy. We aim to develop a data driven typology of elected representatives based on their individual features, such as demographics, party affiliation, and more importantly their representation activity. To this end, we utilize a set of indicators from Singaporean national parliament covering the span of 2011-2020.
+author:
+  - name: Ng Yi Ming
+    affiliation: Yale-NUS college, Department of Philosopy, Politics & Economics
+  - name: Hasti Narimanzadeh
+    affiliation: Aalto University School of Science and Technology, [Department here]
+  - name: Sina Özddemir
+    affiliation: Norwegian University of Science and Technology, Department of Sociology and Political Science
+
+date: "`r Sys.Date()`"
+output: distill::distill_article
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(pacman)
+packs<-c("tidyverse","kableExtra","patchwork","gtsummary","Hmisc","psych")
+pacman::p_load(char = packs,character.only = T)
+
+data<- read.csv(file = file.path(getwd(),"data-master","project-data","MP stats.csv"),header = T,dec = ".",strip.white = T,stringsAsFactors = T)
+
+```
+
+Distill is a publication format for scientific and technical writing, native to the web. 
+
+Learn more about using Distill for R Markdown at <https://rstudio.github.io/distill>.
+
+
+
+
+
