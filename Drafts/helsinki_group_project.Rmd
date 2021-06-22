@@ -11,24 +11,286 @@ author:
     affiliation: Norwegian University of Science and Technology, Department of Sociology and Political Science
 
 date: "`r Sys.Date()`"
-output: distill::distill_article
+output:  distill::distill_article
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
-library(pacman)
-packs<-c("tidyverse","kableExtra","patchwork","gtsummary","Hmisc","psych")
-pacman::p_load(char = packs,character.only = T)
 
-data<- read.csv(file = file.path(getwd(),"data-master","project-data","MP stats.csv"),header = T,dec = ".",strip.white = T,stringsAsFactors = T)
+library(pacman)
+packs<-c("tidyverse","kableExtra","patchwork","Hmisc","psych","here","FactoMineR")
+pacman::p_load(char = packs,character.only = T)
+source(here("Scipts","Project scripts","functions.R"))
+knitr::opts_chunk$set(echo = FALSE,
+dev = "ragg_png",
+dpi = 320,
+out.width = "100%",
+fig.width = 6,
+fig.asp = 0.618,
+fig.retina = 2,
+fig.align = "center",
+fig.show = "hold",
+fig.path = here("Graphs","figure-"))
+
+data_path<- here::here("data-master","project-data")
+graph_path<- here::here("Graphs")
+data<- read.csv(file = file.path(data_path,"MP stats.csv"),
+                header = T,
+                dec = ".",
+                strip.white = T,
+                stringsAsFactors = T,
+                na.strings = c(""," ",NA)
+                )
+
+
+data$Age_cat<- ifelse(data$Age >= quantile(data$Age)[1] & data$Age < quantile(data$Age)[2],paste0(quantile(data$Age)[1],"-",quantile(data$Age)[2]),
+                      ifelse(data$Age >= quantile(data$Age)[2] & data$Age < round(quantile(data$Age)[3]),paste0(quantile(data$Age)[2],"-",round(quantile(data$Age)[3])),
+                             ifelse(data$Age >= round(quantile(data$Age)[3]) & data$Age < quantile(data$Age)[4],paste0(round(quantile(data$Age)[3]),"-",quantile(data$Age)[4]),
+                                    ifelse(data$Age >= quantile(data$Age)[4] & data$Age <= quantile(data$Age)[5],paste0(quantile(data$Age)[4],"-",quantile(data$Age)[5]),"undefined"))))
+
+data$Age_cat<- factor(data$Age_cat,levels = c( "26-40","40-46","46-51","51-62"))
 
 ```
 
-Distill is a publication format for scientific and technical writing, native to the web. 
+# Notes and to-do:
 
-Learn more about using Distill for R Markdown at <https://rstudio.github.io/distill>.
+1)  Adjust the scales and legends of the visualizations for the presentation
+
+2)  Reduce dimensions
+
+3)  Do clustering
+
+    -   K-means
+    -   Hierarchical
+    -   LPA
+
+4)  Visualize the cluster centroids
+
+    -   Radar plot
+    -   Lollipop plot
+    -   Good old bar-plot/scatter-plot
+
+5)  Add Hasti's code chunk into the document
+
+# Introduction
+
+Let's start by examining the data structure. Below is the storage method and NA counts of the variables in the initial data set.
+
+```{r na_graph, eval=T, echo = TRUE}
+
+data_class<- map_df(data, class) %>%
+  pivot_longer(cols = 1:ncol(.),names_to = "variable_names",values_to = "variable_class")
+  
+  meta_data<- Hmisc::contents(data)[["contents"]] %>% 
+    as_tibble(rownames = "variable_names") %>% left_join(x = .,y = data_class, by = "variable_names") %>%
+    mutate(class_storage = paste0(.$variable_class,"/",Storage))
+  
+  
+  na_graph <-  meta_data %>%
+    filter(NAs >0) %>%
+    ggplot(aes(x = variable_names, y = NAs))+
+    geom_bar(aes(fill = NAs),stat = "identity",position = "dodge")+
+    theme_minimal()+theme(axis.text.x = element_text(angle = 90))+coord_flip()+
+    labs(x = "Variable", y = "NA count",title = "Storage type and NA counts of Parliament data \n N = 136")
+  
+na_graph
+```
+
+```{r variable_types, echo=T,eval=T}
+
+meta_data %>%select(variable_names,class_storage,NAs) %>% 
+  kbl(caption = "Class and type of the variables in the MP stats data",col.names = c("Variable name","Variable Class/Type","NA count")) %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+
+```
+
+Most variables seem to be stored correctly. I am not sure where the NAs are coming from. Possibly non-available information? Considering their ratio, simply omitting them from the data would cost us too much information. I should talk to Nym to find a good solution. Right now, it would be rather hard to properly impute them so maybe I can approximate them with other variables (eg. Ret approximated by age,win by 50% due to first past the post etc.) \#\# Descriptive stats of the raw data:
+
+lets give some basic descriptive of the raw data before we start transforming the data for dimension reduction. First, we'll clean the data a bit.
+
+```{r ignore_var, eval = T, echo = T}
+data$GRC<- factor(data$GRC,levels = c(levels(data$GRC),"Not Applicable"))
+data$GRC[is.na(data$GRC)]<-"Not Applicable"
+
+data<- data %>% drop_na()
+
+updated_meta<- map_df(data, class) %>%
+  pivot_longer(cols = 1:ncol(.),names_to = "variable_names",values_to = "variable_class")
+  
+updated_meta_data<- Hmisc::contents(data)[["contents"]] %>% 
+    as_tibble(rownames = "variable_names") %>% left_join(x = .,y = data_class, by = "variable_names") %>%
+    mutate(class_storage = paste0(.$variable_class,"/",Storage))
+
+na_counter<-  function(x) {
+  na_count<- sum(is.na(x))
+  return(na_count)
+  
+}
+
+updated_na<- map_df(data, na_counter) %>% pivot_longer(cols = everything(),names_to = "variable_names",values_to = "NAs") %>% right_join(x = .,y=updated_meta_data,by = "variable_names")
+
+updated_na_graph <-  updated_na %>%
+    ggplot(aes(x = variable_names, y = NAs))+
+    geom_bar(aes(fill = NAs),stat = "identity",position = "dodge")+
+    theme_minimal()+theme(axis.text.x = element_text(angle = 90))+coord_flip()+
+    labs(x = "Variable", y = "NA count",title = "NA counts of Parliament data after imputation",subtitle="N = 136")
+  
+updated_na_graph
+
+```
+
+We have now cleaned the data of NAs either via rule-based imputation for some variables or removing them.
+
+```{r descriptive stats, eval=-1}
 
 
 
+soc_id_desc<- apply(data[,c("Race","Gender","Age_cat","Edu","Career")],MARGIN = 2,FUN = table) %>% unlist()
+soc_id_desc_df<- cbind(str_split(string = names(soc_id_desc),pattern = "\\.",simplify = T),
+                       soc_id_desc) %>% as.data.frame() %>% set_names(nm = c("variable","category","freq"))
+
+soc_iden_desc_plot<-soc_id_desc_df %>%
+  mutate(perc = round(((as.numeric(freq)/134)*100))) %>%
+  ggplot(aes(x = variable, y= perc, fill = category))+
+  geom_bar(color = "gray50",stat = "identity",position = "stack")+
+  geom_text(aes(label = perc),position = position_stack(vjust = .5))+
+  theme_light()+labs(x = "Social identity indicators",y = "Percentage",title = "Descriptive stats of social identitiy indicators",subtitle = "N = 134")
 
 
+elec_mot<- data %>% select(Parl,Name,Win,Ret,Exp)
+
+elec_mot_desc <- data %>%
+  summarise(win_perc = round(mean(Win)),
+            Ret_perc = round((sum(Ret)/134)*100),
+            Exp_mean = round(mean(Exp))) %>% 
+  pivot_longer(cols = everything(),names_to = "variables",values_to = "values")
+
+elec_mot_desc_plot<- elec_mot_desc %>%
+  ggplot(aes(x = variables,y = values)) +
+  geom_bar(aes(fill = values),stat = "identity",position = "dodge")+
+  theme_minimal()+labs(x = "Electoral motivation indicators",y = "Mean",title = "Mean values of electoral motivation indicators",subtitle = "N = 134")
+
+#Parliamentary Bodies indicator is not in the data
+pol_minst<- data %>% select(Parl,Name,MP,Party)
+
+pol_minst_mp <- data %>%
+  count(MP,name = "freq") %>%
+  mutate(perc = round((freq/134)*100,1)) %>%
+  rename(variables = MP)
+
+pol_minst_mp_plot<- pol_minst_mp %>% ggplot(aes(x = variables, y = perc))+
+  geom_bar(aes(fill = perc),stat= "identity",position = "dodge")+
+  theme_minimal()+labs(x = "Non-Electoral Schemes", y= "Perc",title = "Political Micro-institution indicator: Non-electoral schemes", subtitle = "N = 134")
+
+pol_minst_party<- data %>%
+  count(Party, name = "freq") %>%
+  mutate(perc = round((freq/134)*100,1)) %>% 
+  rename(variables = Party)
+
+pol_minst_party_plot<- pol_minst_party %>% ggplot(aes(x = variables, y = perc))+
+  geom_bar(aes(fill = perc),stat= "identity",position = "dodge")+
+  theme_minimal()+labs(x = "Political Parties", y= "Perc",title = "Political Micro-institution indicator: Party control", subtitle = "N = 134")
+
+
+(pol_minst_mp_plot + pol_minst_party_plot + elec_mot_desc_plot) / soc_iden_desc_plot
+
+```
+
+## Imputations
+
+Upon closer examination, it seems that there are two groups of NAs. The first group, which is indicated by the low frequency of NA in figure above, indicates MPs were probably inactive during the period. This assumption is also corroborated by the fact that they have 0 questions asked. In order to handle this, we simply replaced the numeric indicators on questions for these observations with 0.
+
+For the win variable, if they have a party affiliation put the average winning percentage for the party in NAs. For independents either put 0 to indicate they were nominated by public or replace them with sample mean.
+
+Ret: if the candidate is publicly nominated, ret = 1, if they are best losers, Nym will look it up.
+
+Exp: if publicly nominated (MP = NMP) 0,
+
+NOTE: for now, ignore NMP and NCMP for the analysis. More data on them will come later.
+
+GRC is not applicable to those who are the best losers and nominated by the public. We will ignore the variable in the subsequent analysis
+
+## Data transformations
+
+### Dummy coding
+
+**FOR MCA THERE IS NO NEED FOR DUMMY TRANSFORMATION**
+
+Large portion of the indicators for personal identity is recorded as nominal data. Traditional dimension reduction methods such a PCA are unable to accommodate nominal data as they rely on the gaussian distribution assumption. Instead of common methods we opt for PCA variations designed for categorical data, specifically Multiple Correspondence Analysis (MCA)as suggested by [this post](https://stats.stackexchange.com/questions/159705/would-pca-work-for-boolean-binary-data-types). To this end, we first recode our nominal variables into binary data
+
+```{r dummy_variables, echo= F, eval = F}
+
+to_dummy_code<- updated_meta_data %>%
+  filter(variable_class == "factor" & Storage == "integer") %>%
+  filter(variable_names !="Name") %>% 
+  pull(variable_names)
+
+dummy_data<- data %>% select(Parl,Name)
+
+for (i in 1:length(to_dummy_code)) {
+  dummy_vars<- psych::dummy.code(x = data[,to_dummy_code[i]]) %>% 
+    as.data.frame()
+  colnames(dummy_vars)<- paste0(to_dummy_code[i],"_",colnames(dummy_vars))
+  dummy_data<-cbind(dummy_data,dummy_vars)
+}
+
+#need to convert the age to dummy
+
+
+
+pca_data<- data %>%
+  select(-any_of(to_dummy_code)) %>%
+  left_join(x = dummy_data,y = ., by = c("Parl","Name"))
+
+```
+
+This is how our recoded data looks like:
+
+```{r dummy_data_table,echo = F, eval =F}
+
+pca_data %>%select(1:12) %>%
+  slice_head(n = 10) %>%
+  kbl(caption = "Binary coded data") %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+
+```
+
+### Question topics:
+
+### Extracting principle components:
+
+Once we have all the variables in the right format, we can now start measuring our dimensions.
+
+#### 1) Personal identity dimension:
+
+First we reduce the dimensions of social identity variables:
+
+```{r social_identity,eval=F,echo=T}
+
+soc_iden_vars<- data %>%
+  select(Race,
+         Gender,
+         Edu,
+         Career,
+         Age_cat)
+
+race_keys<- c(C = "Chinese",I = "Indian",M = "Malay",O = "Other")
+gender_keys<- c(M = "Male",F = "Female")
+edu_keys<- c(B = "Bachelor", M = "Master", P = "PhD",T = "Technical")
+
+soc_iden_vars$Race<-recode_factor(.x = soc_iden_vars$Race,!!!race_keys)
+soc_iden_vars$Gender<- recode_factor(.x = soc_iden_vars$Gender, !!!gender_keys)
+soc_iden_vars$Edu<- recode_factor(.x = soc_iden_vars$Edu, !!!edu_keys)
+
+soc_iden_vars$Age<- as.numeric(soc_iden_vars$Age)
+#no need for dummy transformation!
+
+soc_iden_mca<- FactoMineR::MCA(X = soc_iden_vars,ncp = 1)
+
+soc_iden_mca$eig
+```
+
+#### 2) Electoral motivation:
+
+#### 3) Micro-institution:
+
+#### 4) Representative issue:
