@@ -1,18 +1,26 @@
 ---
-title: "A data-driven typology of elected representative"
+title: "A data-driven typology of Parliamentary Representatives in Singapore"
 description: |
-  The key element in any type of democracy is representation. Consequently, representatives, specifically the elected representatives, occupy the central role in day-to-day functioning of any democracy. We aim to develop a data driven typology of elected representatives based on their individual features, such as demographics, party affiliation, and more importantly their representation activity. To this end, we utilize a set of indicators from Singaporean national parliament covering the span of 2011-2020.
+  The key element in any type of democracy is representation. Consequently, representatives, especially the elected representatives, occupy the central role in day-to-day functioning of any democracy. We aim to develop a data driven typology of elected representatives based on their individual features, such as demographics, party affiliation, and more importantly their representative activity. To this end, we utilize a set of indicators from Singaporean national parliament covering the span of 2011-2020.
 author:
   - name: Ng Yi Ming
-    affiliation: Yale-NUS college, Department of Philosopy, Politics & Economics
+    affiliation: Yale-NUS College, Division of Social Sciences
   - name: Hasti Narimanzadeh
-    affiliation: Aalto University School of Science and Technology, [Department here]
+    affiliation: Aalto University School of Science and Technology, Department of Computer Science
   - name: Sina Özddemir
     affiliation: Norwegian University of Science and Technology, Department of Sociology and Political Science
 
 date: "`r Sys.Date()`"
 output:  distill::distill_article
 ---
+
+# Introduction
+
+Parliamentary questions (PQs) are a common feature in Westminster-style Parliaments where representatives ask questions on any topics to ministers. Do to the relative low party control over PQ use, PQs are a uniquely valuable dataset to track the representative orientations of MPs, such as their policy interests and preferences. Existing studies of PQs around the world have combined PQ data with MP-level characteristics to study various hypotheses of what drives PQ topics, including individual demographic factors like race and gender, electoral factors like winning margin or political section, and institutional factors like parliamentary roles and party affiliation.
+
+However, existing literature is limited to understanding isolated relations between individual factors and PQ activity outcomes. There is a lack of a holistic analysis simultaneously considering all available factors of MP-level traits and PQ activity, to understand broader typologies of MPs and their PQ representative behaviour. 
+
+We explore this question through an unsupervised data-driven analysis that exploits publicly available PQ text data of all 8246 PQs filed in Singapore's Parliament from 2011 to 2020 by 100 MPs, together with data on the MP's personal identities, electoral background, and institutional affiliations.
 
 ```{r setup, include=FALSE}
 
@@ -72,8 +80,7 @@ data$Age_cat<- factor(data$Age_cat,levels = c( "26-40","40-46","46-51","51-62"))
 
 5)  Add Hasti's code chunk into the document
 
-# Introduction
-
+# Data Overview
 Let's start by examining the data structure. Below is the storage method and NA counts of the variables in the initial data set.
 
 ```{r na_graph, eval=T, echo = TRUE}
