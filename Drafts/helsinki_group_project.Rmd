@@ -17,9 +17,12 @@ output:  distill::distill_article
 ```{r setup, include=FALSE}
 
 library(pacman)
-packs<-c("tidyverse","kableExtra","patchwork","Hmisc","psych","here","FactoMineR")
+packs<-c("tidyverse","kableExtra","patchwork","Hmisc","psych","here","FactoMineR","igraph")
 pacman::p_load(char = packs,character.only = T)
-source(here("Scipts","Project scripts","functions.R"))
+
+data_path<- here::here("data-master","project-data")
+graph_path<- here::here("Graphs")
+
 knitr::opts_chunk$set(echo = FALSE,
 dev = "ragg_png",
 dpi = 320,
@@ -31,8 +34,6 @@ fig.align = "center",
 fig.show = "hold",
 fig.path = here("Graphs","figure-"))
 
-data_path<- here::here("data-master","project-data")
-graph_path<- here::here("Graphs")
 data<- read.csv(file = file.path(data_path,"MP stats.csv"),
                 header = T,
                 dec = ".",
@@ -254,7 +255,99 @@ pca_data %>%select(1:12) %>%
 
 ```
 
-### Question topics:
+### Representative performance:
+
+The last dimension in our elected representatives typology is the representative performance. We conceive representative performance as the policy focus and intensity with which the elected representative fulfill their mandate. To approximate the policy focus, we make use of the parliamentary question sessions where the MPs pose questions to various ministries in Singapore. We argue that these questions indicates two key factors. First of which is the salient policy issues for the MPs, thus give us an insight into the policy focus of MPs during their representative mandate. The secondly, the frequency of asking questions indicates how hard the MPs work to fulfill their representative mandate. We can summarize our conceptualization of representative performance in a simple 2x2 table:
+
++--------------------------+----------------------------+----------------------------+
+|                          | Low intensity of questions | High intensity of Question |
++==========================+============================+============================+
+| **Narrow policy focus**  | TYPE A                     | TYPE B                     |
++--------------------------+----------------------------+----------------------------+
+| **Diverse policy focus** | TYPE C                     | TYPE D                     |
++--------------------------+----------------------------+----------------------------+
+
+: Representative Performance
+
+We measure the intensity of representative performance as the number of questions asked by an MP per parliamentary season.**[Nym needs to double check these claims!]** While there are some restrictions imposed on the number of questions an MP can ask per session, how often MPs can join in the question session is up to them. Therefore, number of questions per season can serve as a suitable proxy on how much effort MPs spend to fulfill their mandate.
+
+We approximate the diversity of policy focus of MPs via two indicators. Our first indicator is the number of times an MP has addressed different ministers. Since ministers have relatively narrower, and pre-determined, policy focus, choosing a minister as an addressee of a question roughly indicates the policy focus of the question. Thus, more diverse the addressees through out a parliamentary season, more diverse the policy focus of the MP. Our second indicator, on the other hand, zooms in on the substance of the questions. While addressee ministers gives us a impression of the diversity of policy focus of the MP, it is not a fine grained picture of the policy focus. Even though the ministers have a limited policy area, they have authority over wide variety of the issues concerning a policy area. For example, minister of defense can not only be responsible for military but also non-military related security issues such as refugees. To identify the policy area of the questions asked by MPs, we ran Dirichlet Multinominal Mixture Mode(GSDMM) (Yin and Wang, 2014) topic modeling on the question texts. Compared to more established topic modeling strategies such as LDA and STM, DMM has been shown to infer the number of clusters automatically with a good balance between the completeness and homogeneity of the clustering results using short text. Since the average length of parliamentary questions is 35 words, GSDMM proved to be a more suitable method.
+
+```{r addresse_frequency, echo=TRUE,eval=T}
+
+addressee_data<- data %>% select(Parl,Name, Sum,MCCY:PMO)
+
+ministery<- colnames(addressee_data)[4:20]
+
+question_freqs<- addressee_data[1:3]
+
+for (i in 1:length(ministery)) {
+  question_freqs[,paste0(ministery[i],"_freq")]<- round(addressee_data[,"Sum"]*addressee_data[,ministery[i]])
+}
+
+question_freqs_long<- question_freqs %>% pivot_longer(cols= MCCY_freq:PMO_freq, names_to = "ministry",values_to = "addressee_freq")
+
+addressee_plot<- question_freqs_long %>%
+  ggplot(aes(x = Name, y= addressee_freq,group = ministry))+
+  geom_bar(aes(fill = ministry),stat= "identity",position = "stack",color = "gray50")+
+  facet_wrap(~Parl)+theme_minimal()+coord_flip()+labs(x = "MPs",y="Addressee Frequency",title = "Frequency of Ministries as addressees",subtitle = "N of MP = 134 \nN of ministries = 17")
+
+
+addressee_plot  
+```
+
+```{r topic_frequency}
+
+question_data<- readRDS(file = paste0(data_path,"/Questions_topics.RDS")) %>%
+  mutate_at(vars(topic_10,topic_15),~as_factor(.))
+
+question_freq_15<- question_data %>% group_by(Parliament,MP,topic_15) %>% summarise(topic_freq = n())
+
+question_freq_10_plot<- question_freq_15 %>%
+  ggplot(aes(x = MP, y = topic_freq,group = topic_15))+
+  geom_bar(aes(fill = topic_15),color = "gray50",stat = "identity",position = "stack")+
+  facet_wrap(~Parliament)+coord_flip()+theme_minimal()+labs(x = "MP",y = "Topic frequency", title = "Topic frequencies by MPs", subtitle = "N of MPs = 134 \nN of topic = 15" )
+
+question_freq_10_plot
+```
+```{r speaker_addressee_network}
+addressee_network_12<- question_freqs %>% filter(Parl == 12) %>% select(-Parl,-Sum)
+colnames(addressee_network_12)<-gsub("_freq","",colnames(addressee_network_12))
+
+addressee_network_12<-addressee_network_12[!duplicated(addressee_network_12$Name),] %>% column_to_rownames(var="Name")
+
+addressee_network_12_adj<- addressee_network_12 %>% as.matrix()
+
+network_adr<- graph_from_incidence_matrix(addressee_network_12_adj)
+
+plot(network_adr)
+
+```
+Ugly as hell bi-partite network graph of MPs and ministers. Need to polish this a lot
+```{r speaker_topic_network}
+
+topic_network_12<- question_data %>%
+  group_by(Parliament,MP,topic_15) %>%
+  summarise(topic_freq = n()) %>%
+  filter(Parliament == 12)
+
+topic_network_12_inc<- topic_network_12 %>%
+  pivot_wider(id_cols = Parliament:MP,
+              names_from = topic_15,
+              values_from = topic_freq,
+              values_fill = 0) %>%
+  ungroup() %>%
+  select(-Parliament) %>%
+  column_to_rownames(var = "MP") %>%
+  as.matrix()
+
+topic_network_12_graph<- graph_from_incidence_matrix(topic_network_12_inc)
+
+plot(topic_network_12_graph)
+
+```
+Again ugly as hell bi-partite network graph of Topic and MPs. Needs polishing. Might switch to ggraph.
+
 
 ### Extracting principle components:
 
@@ -287,9 +380,24 @@ soc_iden_vars$Age<- as.numeric(soc_iden_vars$Age)
 soc_iden_mca<- FactoMineR::MCA(X = soc_iden_vars,ncp = 1)
 
 soc_iden_mca$eig
+
+soc_iden_var<- soc_iden_mca$ind$coord %>%
+  as.data.frame()%>% rename(soc_id = V1)
+
 ```
 
+Here I need some visual stuff for the new dimension
+
 #### 2) Electoral motivation:
+
+```{r electoral_motivation, echo=TRUE,eval=FALSE}
+
+elec_mot<- data %>% select(Exp,Win,Ret)
+
+elec_mot_princomp<- princomp(x = elec_mot,scores = T)#I think this doesn't standardize first...
+
+elec_mot_var<- elec_mot_princomp$scores %>% as.data.frame() %>% select(Comp.1) %>% rename(elec_mot = Comp.1)
+```
 
 #### 3) Micro-institution:
 

@@ -6,9 +6,9 @@
 library(igraph)
 library(tidyverse)
 library(patchwork)
-data_path<- file.path(getwd(),"data-master")
+data_path<- file.path(getwd(),"data-master","course-data")
 
-data<- read.csv(file = file.path(data_path,"org_x_collaboration.csv"),stringsAsFactors = F,header = F) %>% as.matrix()
+network_data<- read.csv(file = file.path(data_path,"org_x_collaboration.csv"),stringsAsFactors = F,header = F) %>% as.matrix()
 
 colnames(data)<-paste("company",seq_along(1:ncol(data)),sep = "_")
 
