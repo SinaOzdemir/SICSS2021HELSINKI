@@ -1,12 +1,12 @@
 ---
-title: "A data-driven typology of elected representative"
+title: "A data-driven typology of Parliamentary Representatives in Singapore"
 description: |
   The key element in any type of democracy is representation. Consequently, representatives, specifically the elected representatives, occupy the central role in day-to-day functioning of any democracy. We aim to develop a data driven typology of elected representatives based on their individual features, such as demographics, party affiliation, and more importantly their representation activity. To this end, we utilize a set of indicators from Singaporean national parliament covering the span of 2011-2020.
 author:
   - name: Ng Yi Ming
-    affiliation: Yale-NUS college, Department of Philosopy, Politics & Economics
+    affiliation: Yale-NUS College, Division of Social Sciences
   - name: Hasti Narimanzadeh
-    affiliation: Aalto University School of Science and Technology, [Department here]
+    affiliation: Aalto University School of Science and Technology, Department of Computer Science
   - name: Sina Özddemir
     affiliation: Norwegian University of Science and Technology, Department of Sociology and Political Science
 
