@@ -39,3 +39,8 @@ vignettes/*.pdf
 
 # R Environment Variables
 .Renviron
+
+# Output figures and CSVs
+gsdmm/output/*.csv
+gsdmm/output/figures/*.pdf
+gsdmm/output/figures/*.png
