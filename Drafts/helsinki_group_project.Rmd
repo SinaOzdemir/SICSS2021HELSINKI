@@ -18,14 +18,14 @@ output:  distill::distill_article
 
 Parliamentary questions (PQs) are a common feature in Westminster-style Parliaments where representatives ask questions on any topics to ministers. Do to the relative low party control over PQ use, PQs are a uniquely valuable dataset to track the representative orientations of MPs, such as their policy interests and preferences. Existing studies of PQs around the world have combined PQ data with MP-level characteristics to study various hypotheses of what drives PQ topics, including individual demographic factors like race and gender, electoral factors like winning margin or political section, and institutional factors like parliamentary roles and party affiliation.
 
-However, existing literature is limited to understanding isolated relations between individual factors and PQ activity outcomes. There is a lack of a holistic analysis simultaneously considering all available factors of MP-level traits and PQ activity, to understand broader typologies of MPs and their PQ representative behaviour. 
+However, existing literature is limited to understanding isolated relations between individual factors and PQ activity outcomes. There is a lack of a holistic analysis simultaneously considering all available factors of MP-level traits and PQ activity, to understand broader typologies of MPs and their PQ representative behaviour.
 
 We explore this question through an unsupervised data-driven analysis that exploits publicly available PQ text data of all 8246 PQs filed in Singapore's Parliament from 2011 to 2020 by 100 MPs, together with data on the MP's personal identities, electoral background, and institutional affiliations.
 
 ```{r setup, include=FALSE}
 
 library(pacman)
-packs<-c("tidyverse","kableExtra","patchwork","Hmisc","psych","here","FactoMineR","igraph")
+packs<-c("tidyverse","kableExtra","patchwork","Hmisc","psych","here","FactoMineR","igraph","factoextra","NbClust")
 pacman::p_load(char = packs,character.only = T)
 
 data_path<- here::here("data-master","project-data")
@@ -57,6 +57,10 @@ data$Age_cat<- ifelse(data$Age >= quantile(data$Age)[1] & data$Age < quantile(da
                                     ifelse(data$Age >= quantile(data$Age)[4] & data$Age <= quantile(data$Age)[5],paste0(quantile(data$Age)[4],"-",quantile(data$Age)[5]),"undefined"))))
 
 data$Age_cat<- factor(data$Age_cat,levels = c( "26-40","40-46","46-51","51-62"))
+data$GRC<- factor(data$GRC,levels = c(levels(data$GRC),"Not Applicable"))
+data$GRC[is.na(data$GRC)]<-"Not Applicable"
+
+data<- data %>% drop_na()
 
 ```
 
@@ -81,74 +85,10 @@ data$Age_cat<- factor(data$Age_cat,levels = c( "26-40","40-46","46-51","51-62"))
 5)  Add Hasti's code chunk into the document
 
 # Data Overview
-Let's start by examining the data structure. Below is the storage method and NA counts of the variables in the initial data set.
 
-```{r na_graph, eval=T, echo = TRUE}
+Let's start by examining the data. Below are the descriptive statistics
 
-data_class<- map_df(data, class) %>%
-  pivot_longer(cols = 1:ncol(.),names_to = "variable_names",values_to = "variable_class")
-  
-  meta_data<- Hmisc::contents(data)[["contents"]] %>% 
-    as_tibble(rownames = "variable_names") %>% left_join(x = .,y = data_class, by = "variable_names") %>%
-    mutate(class_storage = paste0(.$variable_class,"/",Storage))
-  
-  
-  na_graph <-  meta_data %>%
-    filter(NAs >0) %>%
-    ggplot(aes(x = variable_names, y = NAs))+
-    geom_bar(aes(fill = NAs),stat = "identity",position = "dodge")+
-    theme_minimal()+theme(axis.text.x = element_text(angle = 90))+coord_flip()+
-    labs(x = "Variable", y = "NA count",title = "Storage type and NA counts of Parliament data \n N = 136")
-  
-na_graph
-```
-
-```{r variable_types, echo=T,eval=T}
-
-meta_data %>%select(variable_names,class_storage,NAs) %>% 
-  kbl(caption = "Class and type of the variables in the MP stats data",col.names = c("Variable name","Variable Class/Type","NA count")) %>%
-  kable_classic(full_width = F, html_font = "Cambria")
-
-```
-
-Most variables seem to be stored correctly. I am not sure where the NAs are coming from. Possibly non-available information? Considering their ratio, simply omitting them from the data would cost us too much information. I should talk to Nym to find a good solution. Right now, it would be rather hard to properly impute them so maybe I can approximate them with other variables (eg. Ret approximated by age,win by 50% due to first past the post etc.) \#\# Descriptive stats of the raw data:
-
-lets give some basic descriptive of the raw data before we start transforming the data for dimension reduction. First, we'll clean the data a bit.
-
-```{r ignore_var, eval = T, echo = T}
-data$GRC<- factor(data$GRC,levels = c(levels(data$GRC),"Not Applicable"))
-data$GRC[is.na(data$GRC)]<-"Not Applicable"
-
-data<- data %>% drop_na()
-
-updated_meta<- map_df(data, class) %>%
-  pivot_longer(cols = 1:ncol(.),names_to = "variable_names",values_to = "variable_class")
-  
-updated_meta_data<- Hmisc::contents(data)[["contents"]] %>% 
-    as_tibble(rownames = "variable_names") %>% left_join(x = .,y = data_class, by = "variable_names") %>%
-    mutate(class_storage = paste0(.$variable_class,"/",Storage))
-
-na_counter<-  function(x) {
-  na_count<- sum(is.na(x))
-  return(na_count)
-  
-}
-
-updated_na<- map_df(data, na_counter) %>% pivot_longer(cols = everything(),names_to = "variable_names",values_to = "NAs") %>% right_join(x = .,y=updated_meta_data,by = "variable_names")
-
-updated_na_graph <-  updated_na %>%
-    ggplot(aes(x = variable_names, y = NAs))+
-    geom_bar(aes(fill = NAs),stat = "identity",position = "dodge")+
-    theme_minimal()+theme(axis.text.x = element_text(angle = 90))+coord_flip()+
-    labs(x = "Variable", y = "NA count",title = "NA counts of Parliament data after imputation",subtitle="N = 136")
-  
-updated_na_graph
-
-```
-
-We have now cleaned the data of NAs either via rule-based imputation for some variables or removing them.
-
-```{r descriptive stats, eval=-1}
+```{r descriptive stats, eval=T}
 
 
 
@@ -219,49 +159,6 @@ GRC is not applicable to those who are the best losers and nominated by the publ
 
 ## Data transformations
 
-### Dummy coding
-
-**FOR MCA THERE IS NO NEED FOR DUMMY TRANSFORMATION**
-
-Large portion of the indicators for personal identity is recorded as nominal data. Traditional dimension reduction methods such a PCA are unable to accommodate nominal data as they rely on the gaussian distribution assumption. Instead of common methods we opt for PCA variations designed for categorical data, specifically Multiple Correspondence Analysis (MCA)as suggested by [this post](https://stats.stackexchange.com/questions/159705/would-pca-work-for-boolean-binary-data-types). To this end, we first recode our nominal variables into binary data
-
-```{r dummy_variables, echo= F, eval = F}
-
-to_dummy_code<- updated_meta_data %>%
-  filter(variable_class == "factor" & Storage == "integer") %>%
-  filter(variable_names !="Name") %>% 
-  pull(variable_names)
-
-dummy_data<- data %>% select(Parl,Name)
-
-for (i in 1:length(to_dummy_code)) {
-  dummy_vars<- psych::dummy.code(x = data[,to_dummy_code[i]]) %>% 
-    as.data.frame()
-  colnames(dummy_vars)<- paste0(to_dummy_code[i],"_",colnames(dummy_vars))
-  dummy_data<-cbind(dummy_data,dummy_vars)
-}
-
-#need to convert the age to dummy
-
-
-
-pca_data<- data %>%
-  select(-any_of(to_dummy_code)) %>%
-  left_join(x = dummy_data,y = ., by = c("Parl","Name"))
-
-```
-
-This is how our recoded data looks like:
-
-```{r dummy_data_table,echo = F, eval =F}
-
-pca_data %>%select(1:12) %>%
-  slice_head(n = 10) %>%
-  kbl(caption = "Binary coded data") %>%
-  kable_classic(full_width = F, html_font = "Cambria")
-
-```
-
 ### Representative performance:
 
 The last dimension in our elected representatives typology is the representative performance. We conceive representative performance as the policy focus and intensity with which the elected representative fulfill their mandate. To approximate the policy focus, we make use of the parliamentary question sessions where the MPs pose questions to various ministries in Singapore. We argue that these questions indicates two key factors. First of which is the salient policy issues for the MPs, thus give us an insight into the policy focus of MPs during their representative mandate. The secondly, the frequency of asking questions indicates how hard the MPs work to fulfill their representative mandate. We can summarize our conceptualization of representative performance in a simple 2x2 table:
@@ -280,19 +177,19 @@ We measure the intensity of representative performance as the number of question
 
 We approximate the diversity of policy focus of MPs via two indicators. Our first indicator is the number of times an MP has addressed different ministers. Since ministers have relatively narrower, and pre-determined, policy focus, choosing a minister as an addressee of a question roughly indicates the policy focus of the question. Thus, more diverse the addressees through out a parliamentary season, more diverse the policy focus of the MP. Our second indicator, on the other hand, zooms in on the substance of the questions. While addressee ministers gives us a impression of the diversity of policy focus of the MP, it is not a fine grained picture of the policy focus. Even though the ministers have a limited policy area, they have authority over wide variety of the issues concerning a policy area. For example, minister of defense can not only be responsible for military but also non-military related security issues such as refugees. To identify the policy area of the questions asked by MPs, we ran Dirichlet Multinominal Mixture Mode(GSDMM) (Yin and Wang, 2014) topic modeling on the question texts. Compared to more established topic modeling strategies such as LDA and STM, DMM has been shown to infer the number of clusters automatically with a good balance between the completeness and homogeneity of the clustering results using short text. Since the average length of parliamentary questions is 35 words, GSDMM proved to be a more suitable method.
 
-```{r addresse_frequency, echo=TRUE,eval=T}
+```{r addresse_frequency, echo=F,eval=T}
 
 addressee_data<- data %>% select(Parl,Name, Sum,MCCY:PMO)
 
 ministery<- colnames(addressee_data)[4:20]
 
-question_freqs<- addressee_data[1:3]
+addressee_freq<- addressee_data[1:3]
 
 for (i in 1:length(ministery)) {
-  question_freqs[,paste0(ministery[i],"_freq")]<- round(addressee_data[,"Sum"]*addressee_data[,ministery[i]])
+  addressee_freq[,paste0(ministery[i],"_freq")]<- round(addressee_data[,"Sum"]*addressee_data[,ministery[i]])
 }
 
-question_freqs_long<- question_freqs %>% pivot_longer(cols= MCCY_freq:PMO_freq, names_to = "ministry",values_to = "addressee_freq")
+question_freqs_long<- addressee_freq %>% pivot_longer(cols= MCCY_freq:PMO_freq, names_to = "ministry",values_to = "addressee_freq")
 
 addressee_plot<- question_freqs_long %>%
   ggplot(aes(x = Name, y= addressee_freq,group = ministry))+
@@ -317,8 +214,32 @@ question_freq_10_plot<- question_freq_15 %>%
 
 question_freq_10_plot
 ```
-```{r speaker_addressee_network}
-addressee_network_12<- question_freqs %>% filter(Parl == 12) %>% select(-Parl,-Sum)
+
+Lets check the correlation between the topics frequencies and ministerial addressees:
+
+```{r topic_addressee_cor, echo=F,eval=T}
+
+corr_data<- question_freq_15 %>%
+  pivot_wider(id_cols = Parliament:MP,
+              names_from = topic_15,
+              values_from = topic_freq,
+              values_fill = 0) %>%
+  rename(Parl = Parliament, Name = MP) %>%
+  right_join(.,addressee_freq,by = c("Parl","Name"),
+             na_matches = "never") %>%
+  ungroup() %>%
+  select(-Parl,-Name,-Sum) %>%
+  mutate(across(everything(),as.numeric))
+
+topic_add_corr<- cor(corr_data,method = "pearson",use = "complete.obs") %>% reshape2::melt()
+
+topic_add_corr %>% ggplot(aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile()
+
+```
+
+```{r speaker_addressee_network, eval=FALSE, echo=F}
+addressee_network_12<- addressee_freq %>% filter(Parl == 12) %>% select(-Parl,-Sum)
 colnames(addressee_network_12)<-gsub("_freq","",colnames(addressee_network_12))
 
 addressee_network_12<-addressee_network_12[!duplicated(addressee_network_12$Name),] %>% column_to_rownames(var="Name")
@@ -330,8 +251,10 @@ network_adr<- graph_from_incidence_matrix(addressee_network_12_adj)
 plot(network_adr)
 
 ```
+
 Ugly as hell bi-partite network graph of MPs and ministers. Need to polish this a lot
-```{r speaker_topic_network}
+
+```{r speaker_topic_network,eval=FALSE,echo=FALSE}
 
 topic_network_12<- question_data %>%
   group_by(Parliament,MP,topic_15) %>%
@@ -353,59 +276,113 @@ topic_network_12_graph<- graph_from_incidence_matrix(topic_network_12_inc)
 plot(topic_network_12_graph)
 
 ```
-Again ugly as hell bi-partite network graph of Topic and MPs. Needs polishing. Might switch to ggraph.
 
+Again ugly as hell bi-partite network graph of Topic and MPs. Needs polishing. Might switch to ggraph.
 
 ### Extracting principle components:
 
-Once we have all the variables in the right format, we can now start measuring our dimensions.
+For dimension reduction, we employ Multiple Factor Analysis (MFA) (Becue-Bertaut and Pages, 2008). MFA is a dimension reduction method that combines traditional principle component analysis and multiple correspondence analysis under one hood. The motivation behind our dimension reduction is two folds. First, our indicators are of different type and different scale. Most geometry based clustering algorithms such as k-means and k-medioids are extremely sensitive to variable type and scale. By applying MFA, we would be rescaling our indicators and convert them into same type (i.e continious). Secondly, we have 44 indicators in total measuring 4 different dimensions;social identity, electoral motivations,political micro-institutions and representative performance. A clustering based on 44 variables would risk unsatisfactory groups due to idiosyncratic variance in variables thus producing hard to understand results. Applying MFA eliminates the risk of idiosyncratic variance in the clustering, thus making clustering results more coherent.
 
-#### 1) Personal identity dimension:
+```{r social_identity,eval=T,echo=F}
+mfa_data_12_a<- data %>% select(Parl,Name,Race,Gender,Age_cat,Edu,Career,Exp,Win,Ret,GRC,MP,Party)
 
-First we reduce the dimensions of social identity variables:
+mfa_data<-left_join(x = mfa_data_12_a,y = addressee_freq,by = c("Parl","Name")) %>%
+  distinct(Parl,Name,.keep_all = T) %>% select(-Parl,-Name) 
 
-```{r social_identity,eval=F,echo=T}
 
-soc_iden_vars<- data %>%
-  select(Race,
-         Gender,
-         Edu,
-         Career,
-         Age_cat)
+#mfa_data$Parl<-factor(mfa_data$Parl,levels = c(12,13))
 
-race_keys<- c(C = "Chinese",I = "Indian",M = "Malay",O = "Other")
-gender_keys<- c(M = "Male",F = "Female")
-edu_keys<- c(B = "Bachelor", M = "Master", P = "PhD",T = "Technical")
+race_key<- c(C = "Chinese",I = "Indian",M = "Malay",O = "Others")
+gender_key<- c(M = "Male",F ="Female")
+edu_key<- c(B = "Bachelor",M = "Master",P = "PhD",T = "Technical")
 
-soc_iden_vars$Race<-recode_factor(.x = soc_iden_vars$Race,!!!race_keys)
-soc_iden_vars$Gender<- recode_factor(.x = soc_iden_vars$Gender, !!!gender_keys)
-soc_iden_vars$Edu<- recode_factor(.x = soc_iden_vars$Edu, !!!edu_keys)
+mfa_data$Race<- recode_factor(mfa_data$Race,!!!race_key)
+mfa_data$Gender<- recode_factor(mfa_data$Gender,!!!gender_key)
+mfa_data$Edu<- recode_factor(mfa_data$Edu,!!!edu_key)
 
-soc_iden_vars$Age<- as.numeric(soc_iden_vars$Age)
-#no need for dummy transformation!
+mfa_data$Muslim_freq<-NULL
 
-soc_iden_mca<- FactoMineR::MCA(X = soc_iden_vars,ncp = 1)
+mfa_res<- MFA(base = mfa_data,group =c(5,3,3,17),name.group = c("soc_id","elec_mot","polit_micro_inst","rep_perf"),
+              type = c("n","s","n","s"),ncp = 17,graph = F)
 
-soc_iden_mca$eig
+eigen_Vals<- get_eigenvalue(mfa_res) %>% as.data.frame() %>% rowid_to_column(var = "dimension") %>% filter(variance.percent >=1)
 
-soc_iden_var<- soc_iden_mca$ind$coord %>%
-  as.data.frame()%>% rename(soc_id = V1)
+
+eigen_Vals %>%
+  ggplot(aes(x = dimension,y = round(variance.percent)))+
+  geom_bar(aes(fill = variance.percent),stat= "identity",position = "dodge") +
+  geom_vline(xintercept = 8,color = "red", size = 1)+geom_vline(xintercept = 17,color = "green",size = 1)+
+  annotate("text", x = 7,y = 11,label = "Keiser Criteria \n(eigen >= 0.7)\n 7 dimensions",color = "red")+
+  annotate("text", x = 18, y = 11, label = "Common sense criteria \n(Total var exp = 80%)\n 17 Dimensions",color = "green")+
+  theme_minimal()+labs(x = "Dimensions",y = "Percentage of variance explained",title = "Multiple Factor Analysis Results")
+
+                        
+
+
+```
+![Dimension loadings](images/00001e.png)
+
+### Clustering:
+
+```{r clustering_kmeans,echo=F,eval=T}
+clustering_data<- mfa_res$global.pca$ind$coord %>% as.data.frame()
+
+optimal_k<- NbClust(data = clustering_data,distance = "euclidean",min.nc = 2,max.nc = 10,method = "kmeans")
+set.seed(123)
+mp_clusters<- kmeans(x = clustering_data,centers = 9,iter.max = 25)
+
+```
+```{r cluster_manual_viz,eval=T,echo=F}
+
+mfa_data$cluster<-mp_clusters$cluster
+
+getmode <- function(v) {
+   uniqv <- unique(v)
+   uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+
+
+soc_identity_summary<-mfa_data %>% group_by(cluster) %>% summarise(Race_mode = getmode(Race),
+                                                                   Gender_mode = getmode(Gender),
+                                                                   Edu_mode = getmode(Edu),
+                                                                   Career_mode = getmode(Career),
+                                                                   Age_mode = getmode(Age_cat))
+
+soc_identity_summary %>% kbl(caption = "Modes of Social identity indicators for Clusters") %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+
+elec_mode_vis<- mfa_data %>% group_by(cluster) %>% summarise(avg_Exp = round(mean(Exp)),
+                                                             avg_Win = round(mean(Win)),
+                                                             Ret = round(mean(Ret),2))
+
+elec_mode_vis %>% kbl(caption = "Means of Electoral motivation indicators for Clusters") %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+
+pol_inst<-mfa_data %>% group_by(cluster) %>% summarise(GRC_mode = getmode(GRC),
+                                                          MP_mode = getmode(MP),
+                                                          Party_mode = getmode(Party))
+
+pol_inst %>% kbl(caption = "Modes of Political micro-institution indicators for Clusters") %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+
+elec_perf_vis<- mfa_data %>%select(cluster,Sum:PMO_freq) %>%  group_by(cluster) %>% summarise(across(everything(),sum)) %>%
+  pivot_longer(cols = Sum:PMO_freq,
+               names_to = "ministerial_addressee",values_to = "frequencies")
+
+elec_perf_vis_sum<- elec_perf_vis %>% filter(ministerial_addressee == "Sum")
+
+elec_pref_vis_max<- elec_perf_vis %>%filter(ministerial_addressee != "Sum") %>% 
+  group_by(cluster) %>%
+  filter(frequencies == max(frequencies)) %>% rbind(.,elec_perf_vis_sum) 
+
+
+elec_pref_vis_max$cluster<- as.factor(elec_pref_vis_max$cluster)
+
+elec_pref_vis_max %>% ggplot(aes(x = ministerial_addressee,y = frequencies, group = cluster))+
+  geom_bar(aes(fill = cluster),stat = "identity",position = "dodge")+
+  theme_minimal()+
+  labs(x = "Ministerial addressee", y = "Max frequency",title = "Most preferred ministerial addressee by cluster")
 
 ```
 
-Here I need some visual stuff for the new dimension
 
-#### 2) Electoral motivation:
-
-```{r electoral_motivation, echo=TRUE,eval=FALSE}
-
-elec_mot<- data %>% select(Exp,Win,Ret)
-
-elec_mot_princomp<- princomp(x = elec_mot,scores = T)#I think this doesn't standardize first...
-
-elec_mot_var<- elec_mot_princomp$scores %>% as.data.frame() %>% select(Comp.1) %>% rename(elec_mot = Comp.1)
-```
-
-#### 3) Micro-institution:
-
-#### 4) Representative issue:
