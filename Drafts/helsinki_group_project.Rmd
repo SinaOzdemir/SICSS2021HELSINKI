@@ -16,7 +16,7 @@ output:  distill::distill_article
 
 # Introduction
 
-Parliamentary questions (PQs) are a common feature in Westminster-style Parliaments where representatives ask questions on any topics to ministers. Do to the relative low party control over PQ use, PQs are a uniquely valuable dataset to track the representative orientations of MPs, such as their policy interests and preferences. Existing studies of PQs around the world have combined PQ data with MP-level characteristics to study various hypotheses of what drives PQ topics, including individual demographic factors like race and gender, electoral factors like winning margin or political section, and institutional factors like parliamentary roles and party affiliation.
+Parliamentary questions (PQs) are a common feature in Westminster-style Parliaments where representatives ask questions on any topics to ministers. Due to the relative low party control over PQ use, PQs are a uniquely valuable dataset to track the representative orientations of MPs, such as their policy interests and preferences. Existing studies of PQs around the world have combined PQ data with MP-level characteristics to study various hypotheses of what drives PQ topics, including individual demographic factors like race and gender, electoral factors like winning margin or political section, and institutional factors like parliamentary roles and party affiliation.
 
 However, existing literature is limited to understanding isolated relations between individual factors and PQ activity outcomes. There is a lack of a holistic analysis simultaneously considering all available factors of MP-level traits and PQ activity, to understand broader typologies of MPs and their PQ representative behaviour.
 
